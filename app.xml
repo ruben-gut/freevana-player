@@ -1,0 +1,21 @@
+<application xmlns="http://ns.adobe.com/air/application/2.6">
+    <id>freevana.freevanaPlayer</id>
+    <versionNumber>1.0</versionNumber>
+    <filename>FreevanaPlayer</filename>
+    <supportedProfiles>extendedDesktop desktop</supportedProfiles>
+    <initialWindow>
+        <content>freevanaPlayer.swf</content>
+        <visible>true</visible>
+        <width>700</width>
+        <height>410</height>
+        <resizable>false</resizable>
+        <maximizable>false</maximizable>
+    </initialWindow>
+    <icon>
+        <image16x16>assets/icon/icon16.png</image16x16>
+        <image32x32>assets/icon/icon32.png</image32x32>
+        <image48x48>assets/icon/icon48.png</image48x48>
+        <image128x128>assets/icon/icon128.png</image128x128>
+    </icon>
+</application>
+

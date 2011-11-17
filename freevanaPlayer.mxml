@@ -1,0 +1,452 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication
+    xmlns:fx="http://ns.adobe.com/mxml/2009" 
+    xmlns:mx="library://ns.adobe.com/flex/mx" 
+    xmlns:s="library://ns.adobe.com/flex/spark"
+    currentState="settingsState"
+    showStatusBar="false"
+    title="Freevana Player" 
+    creationComplete="initApp()">
+    <fx:Style source="assets/css/styles.css" />
+    <fx:Script>
+        <![CDATA[
+            import mx.controls.Alert;
+            import mx.utils.ObjectUtil;
+            import mx.collections.ArrayCollection;
+
+            import flash.events.Event;
+            import flash.events.MouseEvent;
+            import flash.filesystem.File;
+
+            import flash.net.URLRequest;
+            import flash.net.URLLoader;
+
+            import freevana.util.*;
+            import freevana.view.*;
+
+            private var _movieIsLoading:Boolean = false;
+
+            private var _settings:Settings = new Settings();
+            private var _db:FreevanaDB;
+            private var _subtitleURL:String;
+
+            [Bindable]
+            private var _dataProvMovies:ArrayCollection = new ArrayCollection();
+            [Bindable]
+            private var _dataProvSeries:ArrayCollection = new ArrayCollection();
+            [Bindable]
+            private var _dataProvSeasons:ArrayCollection = new ArrayCollection();
+            [Bindable]
+            private var _dataProvEpisodes:ArrayCollection = new ArrayCollection();
+
+            public function initApp():void
+            {
+                // Apparently, this is the only way to style those <a> links
+                var css:StyleSheet = new StyleSheet();
+                css.parseCSS( "a { color: #FFC895; }" );
+                settingsDBInfo.styleSheet = css;
+                settingsSubsInfo.styleSheet = css;
+
+                initLangs();
+
+                if (!_settings.isSetupCompleted()) {
+                    loadSettings();
+                } else {
+                    loadContent();
+                }
+            }
+
+            private function initLangs():void
+            {
+                var langs:Array = Capabilities.languages;
+                var prefLang:String = (langs[0] as String).toUpperCase();
+                trace("[main] Lang is: " + prefLang);
+                if (prefLang.indexOf("EN") != -1) {
+                    resourceManager.localeChain = ['en_US'];
+                } else {
+                    resourceManager.localeChain = ['es_ES'];
+                }
+            }
+
+            public function loadSettings():void
+            {
+                currentState="settingsState";
+                var resources:Resources = new Resources();
+
+                subtitlesBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
+                    resources.selectSubtitlesDir(function (dir:File):void {
+                        if (dir != null) {
+                            _settings.setSubtitlesDir(dir);
+                            subtitlesLbl.text = dir.nativePath;
+                        }
+                    });
+                });
+
+                databaseBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
+                   resources.copyDB(function ():void {
+                       _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
+                       databaseLbl.text = _db.getVersion();
+                       databaseError.text = "";
+                       settingsStartBtn.enabled = true;
+                       _settings.markSetupCompleted();
+                   });
+                });
+
+                var subsDir:File = _settings.getSubtitlesDir();
+                if (subsDir != null) {
+                    subtitlesLbl.text = subsDir.nativePath;
+                }
+
+                if (!resources.checkDB()) {
+                    databaseError.text = resourceManager.getString('Strings', 'SETTINGS_DATABASE_NONE_ERROR');
+                } else {
+                    _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
+                    trace(_db.getVersion());
+                    databaseLbl.text = _db.getVersion();
+                    settingsStartBtn.enabled = true;
+                    if (!_settings.isSetupCompleted()) {
+                        _settings.markSetupCompleted();
+                    }
+                }
+            }
+
+            private function loadContent():void {
+                currentState = "libraryState";
+                _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
+                initMainDataGrids();
+                loadMoviesAndSeries();
+            }
+
+            /**
+            * Configure default DataGrids
+            */
+            private function initMainDataGrids():void {
+                dgMovies.addEventListener("itemDoubleClick", movieClicked);
+                dgSeries.addEventListener("itemDoubleClick", seriesClicked);
+
+                function movieClicked(ev:*):void {
+                    var movie:Object = dgMovies.selectedItem;
+                    startGettingVideoData(movie, true);
+                }
+                function seriesClicked(ev:*):void {
+                    var series:Object = dgSeries.selectedItem;
+                    loadSeasons(series.id);
+                    initSeriesDataGrids();
+                }
+            }
+
+            private function initSeriesDataGrids():void {
+                dgSeasons.addEventListener("itemDoubleClick", seasonsClicked);
+                dgEpisodes.addEventListener("itemDoubleClick", episodesClicked);
+
+                function seasonsClicked(ev:*):void {
+                    var season:Object = dgSeasons.selectedItem;
+                    loadEpisodes(season.id);
+                }
+                function episodesClicked(ev:*):void {
+                    var episode:Object = dgEpisodes.selectedItem;
+                    startGettingVideoData(episode, false);
+                }
+            }
+            /**
+            * Load DataGrids with data from the DB
+            */
+            private function loadMoviesAndSeries():void {
+                _dataProvMovies = new ArrayCollection(_db.getMovies());
+                _dataProvSeries = new ArrayCollection(_db.getSeries());
+            }
+
+            private function loadSeasons(seriesId:int):void {
+                _dataProvSeasons = new ArrayCollection(_db.getSeasons(seriesId));
+                _dataProvEpisodes = new ArrayCollection(new Array());
+                currentState = "librarySeasonsState";
+            }
+
+            private function loadEpisodes(seasonId:int):void {
+                var res:Array = _db.getEpisodes(seasonId);
+                _dataProvEpisodes = new ArrayCollection(res);
+                if (!res || res.length == 0) {
+                    counter.text = resourceManager.getString('Strings', 'NO_EPISODES_LABEL');
+                } else {
+                    counter.text = resourceManager.getString('Strings', 'SEASONS_LABEL');
+                }
+                currentState = "librarySeasonsState";
+            }
+
+            private function startGettingVideoData(item:Object, isMovie:Boolean):void 
+            {
+                // this is needed in case multiple double-clicks are triggered
+                if (_movieIsLoading) {
+                    trace("[main] already loding a movie!")
+                    return;
+                } else {
+                    _movieIsLoading = true;
+                }
+
+                currentState = "loadingState";
+                loadingLbl.text = resourceManager.getString('Strings', 'CONTACTING_REMOTE_SERVER');
+                trace(item.url);
+
+                var _megaUpload:Megaupload = new Megaupload(item.url);
+                _megaUpload.addEventListener(Megaupload.PAGE_LOADED_EVENT, onPageLoaded);
+                _megaUpload.addEventListener(Megaupload.COUNTER_CHANGED_EVENT, onCounterChanged);
+                _megaUpload.addEventListener(Megaupload.LINK_AVAILABLE_EVENT, onLinkAvailable);
+                _megaUpload.addEventListener(Megaupload.LINK_UNAVAILABLE_EVENT, onLinkUnavailable);
+
+                function onPageLoaded(ev:Event):void {
+                    trace("[main] Page Loaded: " + ev.toString());
+                }
+                function onCounterChanged(ev:Event):void {
+                    loadingLbl.text = resourceManager.getString('Strings', 'VIDEO_WILL_START') + _megaUpload.counterValue;
+                }
+                function onLinkAvailable(ev:Event):void {
+                    trace("[main] Link is: " + _megaUpload.downloadURL);
+                    startLoadingVideo(_megaUpload.downloadURL);
+                }
+                
+                function onLinkUnavailable(ev:Event):void {
+                    Alert.show(resourceManager.getString('Strings', 'MEGAUPLOAD_LINK_UNAVAILABLE'));
+                    // Clean up
+                    _movieIsLoading = false;
+                    _subtitleURL = null;
+                    // Go back to main list
+                    currentState = "libraryState";
+                }
+
+                // First, make sure we have subtitles, then, start megaupload
+                var subsLang:String = (subsLang.selectedItem as String);
+                var subs:Subtitles = new Subtitles();
+                subs.getSubtitlesPathForVideo(item.id, isMovie, subsLang, function(subsURL:String):void {
+                    _subtitleURL = subsURL;
+                    // Start downloading from Megaupload
+                    _megaUpload.start();
+                    trace("[main] Starting megaupload");
+                });
+            }
+
+            private function startLoadingVideo(movieURL:String):void
+            {
+                counter.text = "Buffering movie...";
+                var _videoPlayer:VideoPlayer = new VideoPlayer(movieURL, _subtitleURL);
+                _videoPlayer.addEventListener(VideoPlayer.PLAYER_INITIALIZING, onVideoPlayerInit);
+                _videoPlayer.addEventListener(VideoPlayer.PLAYER_READY, onVideoPlayerReady);
+
+                function onVideoPlayerInit(event:Event):void {
+                    // Change to VideoView
+                    currentState = "videoState";
+                    videoCanvas.addChild(_videoPlayer.videoComponent);
+                }
+                function onVideoPlayerReady(event:Event):void {
+                    trace("[main] onFlowplayerReady.");
+                }
+                _videoPlayer.init();
+            }
+
+            private function filterMoviesFunc(item:Object):Boolean {
+                // this is much faster than using RegExp... go figure...
+                return (item.name.toLowerCase().indexOf(moviesFilter.text.toLowerCase()) != -1);
+            }
+
+            private function doFilterMovies():void {
+                _dataProvMovies.filterFunction = filterMoviesFunc;
+                _dataProvMovies.refresh();
+            }
+
+            private function filterSeriesFunc(item:Object):Boolean {
+                // this is much faster than using RegExp... go figure...
+                return (item.name.toLowerCase().indexOf(seriesFilter.text.toLowerCase()) != -1);
+            }
+
+            private function doFilterSeries():void {
+                _dataProvSeries.filterFunction = filterSeriesFunc;
+                _dataProvSeries.refresh();
+            }
+        ]]>
+    </fx:Script>
+    <fx:Metadata>
+        [ResourceBundle("Strings")]
+    </fx:Metadata>
+
+    <s:states>
+        <s:State name="settingsState" />
+        <s:State name="libraryState" stateGroups="library"/>
+        <s:State name="librarySeasonsState" stateGroups="library" />
+        <s:State name="loadingState" />
+        <s:State name="videoState" />
+    </s:states>
+    <s:transitions>
+        <mx:Transition id="toMainPanel" fromState="settingsState" toState="libraryState">
+            <mx:Parallel target="{mainPanel}">
+                <mx:Dissolve alphaFrom="0.0" alphaTo="1.0" duration="400"/>
+            </mx:Parallel>
+        </mx:Transition>
+        <mx:Transition id="toSeasons" fromState="libraryState" toState="librarySeasonsState">
+            <mx:Parallel target="{mainPanel}">
+                <mx:Dissolve alphaFrom="0.0" alphaTo="1.0" duration="400"/>
+            </mx:Parallel>
+        </mx:Transition>
+        <mx:Transition id="fromSeasons" fromState="librarySeasonsState" toState="libraryState">
+            <mx:Parallel target="{mainPanel}">
+                <mx:Dissolve alphaFrom="0.0" alphaTo="1.0" duration="200"/>
+            </mx:Parallel>
+        </mx:Transition>
+    </s:transitions>
+
+    <mx:Canvas width="100%" height="100%">
+        <mx:Panel id="settingsPanel" includeIn="settingsState" opaqueBackground="#39628C" width="100%" height="100%" 
+        title="{resourceManager.getString('Strings', 'SETTINGS_PANEL_TITLE')}"
+        paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+            <s:VGroup>
+                <s:HGroup verticalAlign="middle" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                    <mx:Text id="settingsDBInfo" fontSize="12" width="670" color="#FFFFFF" 
+                        htmlText="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_INFO')}" />
+                </s:HGroup>
+
+                <s:HGroup verticalAlign="middle" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                    <s:Label fontSize="13" color="#FFFFFF" fontWeight="bold"
+                        text="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_LABEL')}:" />
+                    <s:Label id="databaseLbl" fontSize="13" color="#EEEEEE"
+                        text="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_NONE_LABEL')}" />
+                    <s:Button id="databaseBtn" label="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_SET_LABEL')}" />
+                    <s:Label id="databaseError" fontSize="13" color="#FF8888" />
+                </s:HGroup>
+
+                <s:HGroup verticalAlign="middle" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                    <mx:Text id="settingsSubsInfo" fontSize="12" width="670" color="#FFFFFF" 
+                        htmlText="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_INFO')}" />
+                </s:HGroup>
+                <s:HGroup verticalAlign="middle" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                    <s:Label fontSize="13" color="#FFFFFF" fontWeight="bold"
+                        text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_LABEL')}:" />
+                    <s:Label id="subtitlesLbl" fontSize="13" color="#EEEEEE"
+                        text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_NONE_LABEL')}" />
+                    <s:Button id="subtitlesBtn" label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SET_LABEL')}" />
+                    <s:Label fontSize="13" color="#FFEEEE" />
+                    <mx:Spacer width="100%" height="50" />
+                </s:HGroup>
+                <s:HGroup paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                    <mx:Spacer width="280" height="70" />
+                    <s:Button id="settingsStartBtn" label="{resourceManager.getString('Strings', 'SETTINGS_START_BUTTON')}" 
+                        height="36" click="loadContent()" enabled="false" />
+                    <mx:Spacer width="200" height="30" />
+                </s:HGroup>
+            </s:VGroup>
+        </mx:Panel>
+
+        <mx:Panel id="mainPanel" includeIn="library" opaqueBackground="#39628C" width="100%" height="100%" 
+            title="{resourceManager.getString('Strings', 'MAIN_PANEL_TITLE')}" 
+            title.librarySeasonsState="{resourceManager.getString('Strings', 'SEASONS_AND_EPISODES')}: {dgSeries.selectedItem.name}"
+            paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+
+            <mx:HBox width="100%" height="22" id="counterBox">
+                <s:Label id="counter" width="100%" height="22" fontSize="12" color="#A788A0"
+                    text="{resourceManager.getString('Strings', 'MAIN_LABEL')}:"
+                    text.librarySeasonsState="{resourceManager.getString('Strings', 'SEASONS_LABEL')}" />
+            </mx:HBox>
+
+            <mx:Canvas width="100%" height="100%">
+                <mx:Tile id="mainLibraryTile" direction="horizontal" includeIn="libraryState">
+                    <s:Group>
+                        <s:layout>
+                            <s:VerticalLayout gap="4" />
+                        </s:layout>
+                        <s:Group>
+                            <s:layout>
+                                <s:HorizontalLayout gap="4" />
+                            </s:layout>
+                            <mx:Label text="{resourceManager.getString('Strings', 'FILTER_MOVIES')}: "/>
+                            <mx:TextInput id="moviesFilter" change="doFilterMovies();" tabIndex="1" />
+                        </s:Group>
+                        <mx:DataGrid id="dgMovies" height="100%" left="4" right="4" top="4" bottom="4" 
+                            dataProvider="{_dataProvMovies}" doubleClickEnabled="true" tabIndex="3">
+                            <mx:columns>
+                                <mx:DataGridColumn headerText="{resourceManager.getString('Strings', 'HEADER_MOVIES')}" 
+                                dataField="name" width="330" />
+                            </mx:columns>
+                        </mx:DataGrid>
+                    </s:Group>
+
+                    <s:Group>
+                        <s:layout>
+                            <s:VerticalLayout gap="4" />
+                        </s:layout>
+                        <s:Group>
+                            <s:layout>
+                                <s:HorizontalLayout gap="4" />
+                            </s:layout>
+                            <mx:Label text="{resourceManager.getString('Strings', 'FILTER_SERIES')}: "/>
+                            <mx:TextInput id="seriesFilter" change="doFilterSeries();" tabIndex="2"/>
+                        </s:Group>
+                        <mx:DataGrid id="dgSeries" height="100%" left="4" right="4" top="4" bottom="4" 
+                            dataProvider="{_dataProvSeries}" doubleClickEnabled="true" tabIndex="4">
+                            <mx:columns>
+                                <mx:DataGridColumn headerText="{resourceManager.getString('Strings', 'HEADER_SERIES')}" 
+                                dataField="name" width="330" />
+                            </mx:columns>
+                        </mx:DataGrid>
+                    </s:Group>
+                </mx:Tile>
+                <s:Group includeIn="librarySeasonsState">
+                   <s:layout>
+                       <s:VerticalLayout gap="4" />
+                   </s:layout>
+                   <s:Button label="{resourceManager.getString('Strings', 'BACK_BUTTON')}" click="currentState='libraryState';" width="100"/>
+                   <mx:Tile id="seasonsLibraryTile" direction="horizontal">
+                       <mx:DataGrid id="dgSeasons" height="100%" left="4" right="4" top="4" bottom="4" 
+                            dataProvider="{_dataProvSeasons}" doubleClickEnabled="true">
+                           <mx:columns>
+                               <mx:DataGridColumn headerText="{resourceManager.getString('Strings', 'HEADER_SEASONS')}" 
+                               dataField="name" width="330" />
+                           </mx:columns>
+                       </mx:DataGrid>
+                       <mx:DataGrid id="dgEpisodes" height="100%" left="4" right="4" top="4" bottom="4" 
+                            dataProvider="{_dataProvEpisodes}" doubleClickEnabled="true">
+                           <mx:columns>
+                               <mx:DataGridColumn headerText="{resourceManager.getString('Strings', 'HEADER_EPISODES')}" 
+                               dataField="name" width="330" />
+                           </mx:columns>
+                       </mx:DataGrid>
+                   </mx:Tile>
+                </s:Group>
+            </mx:Canvas>
+            <mx:ControlBar width="100%" id="controlBar">
+                <mx:Label text="{resourceManager.getString('Strings', 'SUBTILES_LANGUAGE')}:"/>
+                <mx:Spacer width="30%"/>
+                <mx:ComboBox id="subsLang" tabIndex="5"> 
+                   <mx:ArrayCollection>
+                      <fx:String>ES</fx:String>
+                      <fx:String>EN</fx:String>
+                      <fx:String>PT</fx:String>
+                   </mx:ArrayCollection>
+                </mx:ComboBox>
+                <mx:Spacer width="60%"/>
+                <s:Button label="{resourceManager.getString('Strings', 'SETTINGS_LABEL')}" click="loadSettings();" />
+            </mx:ControlBar>
+        </mx:Panel>
+
+
+        <mx:Canvas width="100%" height="100%" includeIn="loadingState">
+            <mx:Panel id="loadingPanel" opaqueBackground="#39628C" width="100%" height="100%" 
+                title="{resourceManager.getString('Strings', 'VIDEO_LOADING')}"
+                paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                
+                <s:VGroup width="100%" height="100%" verticalAlign="middle">
+                    <mx:Spacer width="100%" height="45%" />
+                    <s:Label id="loadingLbl" width="100%" height="100%" fontSize="18" color="#FFF7B7" 
+                    text="{resourceManager.getString('Strings', 'CONTACTING_REMOTE_SERVER')}" 
+                    textAlign="center" />
+                </s:VGroup>
+            </mx:Panel>
+        </mx:Canvas>
+        <mx:Canvas id="videoCanvas" width="100%" opaqueBackground="#000000" height="100%" includeIn="videoState"/>
+    </mx:Canvas>
+
+</s:WindowedApplication>
+<!--
+
+~/Development/flex_sdk_4/bin/amxmlc -compiler.debug -locale=en_US,es_ES -allow-source-path-overlap=true -source-path+=locale/{locale} -source-path+=src -theme=assets/theme.css freevanaPlayer.mxml
+
+~/Development/flex_sdk_4/bin/amxmlc -compiler.debug -locale=en_US,es_ES -allow-source-path-overlap=true -source-path+=locale/{locale} -source-path+=src -theme=assets/theme.css freevanaPlayer.mxml
+~/Development/AdobeAIRSDK/bin/adt -package -storetype pkcs12 -keystore freevanaCert.pfx freevanaPlayer.air app.xml freevanaPlayer.swf AIRAliases.js assets/icon/* flowplayer/*
+
+-->

@@ -1,0 +1,11 @@
+@namespace mx "library://ns.adobe.com/flex/mx";
+@namespace fx "library://ns.adobe.com/mxml/2009";
+@namespace s "library://ns.adobe.com/flex/spark"; 
+
+s|WindowedApplication {
+    backgroundColor: #FFFFFF;
+}
+
+mx|Canvas #videoCanvas {
+    backgroundColor: #000000;
+}
