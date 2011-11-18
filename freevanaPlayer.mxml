@@ -43,7 +43,7 @@
             {
                 // Apparently, this is the only way to style those <a> links
                 var css:StyleSheet = new StyleSheet();
-                css.parseCSS( "a { color: #FFC895; }" );
+                css.parseCSS( "a { color: #FFE8B5; }" );
                 settingsDBInfo.styleSheet = css;
                 settingsSubsInfo.styleSheet = css;
 
@@ -328,7 +328,11 @@
                     <mx:Spacer width="280" height="70" />
                     <s:Button id="settingsStartBtn" label="{resourceManager.getString('Strings', 'SETTINGS_START_BUTTON')}" 
                         height="36" click="loadContent()" enabled="false" />
-                    <mx:Spacer width="200" height="30" />
+                    <mx:Spacer width="200" height="70" />
+                </s:HGroup>
+                <s:HGroup>
+                    <mx:Spacer width="490" height="20" />
+                    <s:Label text="Copyright (C) 2011 Tirino (GNU GPL v3)" fontSize="10" color="#FFE8B5" />
                 </s:HGroup>
             </s:VGroup>
         </mx:Panel>
@@ -442,11 +446,3 @@
     </mx:Canvas>
 
 </s:WindowedApplication>
-<!--
-
-~/Development/flex_sdk_4/bin/amxmlc -compiler.debug -locale=en_US,es_ES -allow-source-path-overlap=true -source-path+=locale/{locale} -source-path+=src -theme=assets/theme.css freevanaPlayer.mxml
-
-~/Development/flex_sdk_4/bin/amxmlc -compiler.debug -locale=en_US,es_ES -allow-source-path-overlap=true -source-path+=locale/{locale} -source-path+=src -theme=assets/theme.css freevanaPlayer.mxml
-~/Development/AdobeAIRSDK/bin/adt -package -storetype pkcs12 -keystore freevanaCert.pfx freevanaPlayer.air app.xml freevanaPlayer.swf AIRAliases.js assets/icon/* flowplayer/*
-
--->
