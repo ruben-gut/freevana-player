@@ -5,6 +5,8 @@ A free open source alternative to Cuevana's website. This player uses an off-lin
 
 TODO
 ====
+- Add the option to download the movies/ series (eazel7)
+- Figure out a way to go back to the list of videos from the video player.
 - Try to listen for Flowplayer's "Finish" event to be able to return to the main screen
 - Improve generation of Flowplayer configuration string
 - Add support for setting a Megaupload user account
