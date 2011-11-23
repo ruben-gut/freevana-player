@@ -7,11 +7,16 @@ package freevana.view
     import flash.events.Event;
     import flash.events.EventDispatcher;
     import flash.net.URLRequest;
-    
+
+    import freevana.util.Utils;
     import org.flowplayer.view.*;
 
     public class VideoPlayer extends EventDispatcher
     {
+        public static const SUBTITLES_SMALL:String = 'SMALL';
+        public static const SUBTITLES_NORMAL:String = 'NORMAL';
+        public static const SUBTITLES_BIG:String = 'BIG';
+        
         public static const PLAYER_INITIALIZING:String = "VideoPlayerInitializing";
         public static const PLAYER_READY:String = "VideoPlayerReady";
 
@@ -27,10 +32,24 @@ package freevana.view
         private var _movieURL:String;
         private var _subtitleURL:String;
 
+        private var _subtitleSize:int = 20;
+        private var _subtitleBoxSize:int = 50;
+
         public function VideoPlayer(movieURL:String, subtitleURL:String):void
         {
             _movieURL = movieURL;
             _subtitleURL = subtitleURL;
+        }
+
+        public function setSubtitleSize(subsSize:String):void
+        {
+            if (subsSize == SUBTITLES_SMALL) {
+                _subtitleSize = 16;
+                _subtitleBoxSize = 46;
+            } else if (subsSize == SUBTITLES_BIG) {
+                _subtitleSize = 24;
+                _subtitleBoxSize = 60;
+            }
         }
 
         public function init():void
@@ -39,11 +58,23 @@ package freevana.view
             // TODO: if _subtitleURL is null or empty, don't include subs configuration code
 
             // Build the config string
-            var captionsPlugins:String = '"captions":{"url":"flowplayer.captions-3.2.3.swf","captionTarget":"content", "button":{"width":23,"height":15,"right":3,"bottom":30,"label":"Sub","opacity":0.4}}';
-            var contentStyle:String = '"style":{"body":{"fontSize":"20","fontFamily":"Arial","textAlign":"center","color":"#FFFFFF"}}';
-            var contentPlugins:String = '"content":{"url":"flowplayer.content-3.2.0.swf","bottom":30, "width":"90%","height":50,"backgroundColor":"transparent","backgroundGradient":"none","borderRadius":4,"border":0,"textDecoration":"outline",'+contentStyle+'}';
+            // TODO: work-around for Linux bug
+            var captionsOpacity:String = '0.4';
+            if (Utils.isLinux()) {
+                captionsOpacity = '0.0';
+            }
+
+            var captionsPlugins:String = '"captions":{"url":"flowplayer.captions-3.2.3.swf","captionTarget":"content", "button":{"width":23,"height":15,"right":5,"bottom":30,"label":"Sub","opacity":'+captionsOpacity+'}}';
+            var contentStyle:String = '"style":{"body":{"fontSize":"'+_subtitleSize+'","fontFamily":"Arial","textAlign":"center","color":"#FFFFFF"}}';
+            var contentPlugins:String = '"content":{"url":"flowplayer.content-3.2.0.swf","opacity":1.0,"bottom":30, "width":"90%","height":'+_subtitleBoxSize+',"backgroundColor":"transparent","backgroundGradient":"none","borderRadius":4,"border":0,"textDecoration":"outline",'+contentStyle+'}';
             var plugins:String = '"plugins":{'+captionsPlugins+','+contentPlugins+'}';
-            var playerConfig:String = '{"canvas":{"backgroundGradient":"none"},"clip":{"url":"'+_movieURL+'","captionUrl":"'+_subtitleURL+'","scaling":"fit","autoPlay":true,"autoBuffering":true},'+plugins+'}'
+            var playerConfig:String;
+
+            if (_subtitleURL && _subtitleURL != '') {
+                playerConfig = '{"canvas":{"backgroundGradient":"none"},"clip":{"url":"'+_movieURL+'","captionUrl":"'+_subtitleURL+'","scaling":"fit","autoPlay":true,"autoBuffering":true},'+plugins+'}'
+            } else {
+                playerConfig = '{"canvas":{"backgroundGradient":"none"},"clip":{"url":"'+_movieURL+'","scaling":"fit","autoPlay":true,"autoBuffering":true},'+plugins+'}'
+            }
 
             var swfURL:String = 'flowplayer/flowplayer-3.2.7.swf?config=' + escape(playerConfig);
             trace(playerConfig);

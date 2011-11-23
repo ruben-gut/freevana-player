@@ -13,7 +13,6 @@ package freevana.util
 
     public class Megaupload extends EventDispatcher
     {
-
         public static var PAGE_LOADED_EVENT:String = "PageLoadedEvent";
         public static var COUNTER_CHANGED_EVENT:String = "CounterChangedEvent";
         public static var LINK_AVAILABLE_EVENT:String = "LinkAvailableEvent";
@@ -23,6 +22,7 @@ package freevana.util
 
         private var _urlLoader:URLLoader;
         private var _counterTotal:int = 60;
+        private var _timer:Timer = null;
         public var _privateDownloadURL:String = null;
 
         public var downloadURL:String = null;
@@ -48,6 +48,15 @@ package freevana.util
             _urlLoader.addEventListener(Event.COMPLETE, onPageDownloaded);
         }
 
+        public function stop():void
+        {
+            if (_timer != null) {
+                _timer.removeEventListener(TimerEvent.TIMER_COMPLETE, doFinishCount);
+                _timer.stop();
+                trace("[Megaupload] stopped counter!");
+            }
+        }
+
         private function onPageDownloaded(ev:Event):void {
             dispatchEvent(new Event(PAGE_LOADED_EVENT));
 
@@ -56,10 +65,10 @@ package freevana.util
             _privateDownloadURL = getDownloadLink(html_);
 
             if (_privateDownloadURL && _counterTotal) {
-                var timer:Timer = new Timer(1000, _counterTotal);
-                timer.addEventListener(TimerEvent.TIMER, doCount);
-                timer.addEventListener(TimerEvent.TIMER_COMPLETE, doFinishCount);
-                timer.start();
+                _timer = new Timer(1000, _counterTotal);
+                _timer.addEventListener(TimerEvent.TIMER, doCount);
+                _timer.addEventListener(TimerEvent.TIMER_COMPLETE, doFinishCount);
+                _timer.start();
             } else {
                 dispatchEvent(new Event(LINK_UNAVAILABLE_EVENT));
                 //Alert.show("Could not get file data on Megaupload!");

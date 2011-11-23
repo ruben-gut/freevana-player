@@ -26,13 +26,13 @@ package freevana.util
             var storageFile:File = buildLocalStoragePathForSubs(itemId, isMovie, lang);
             if (storageFile != null && storageFile.exists) { // subs are in the storage dir
                 trace("[Subtitles] found storage file");
-                callback(storageFile.url);
+                callback(storageFile);
             } else {
                 var subsDirFile:File = buildSubsDirPathForSubs(itemId, isMovie, lang);
                  // subs are in user's subs dir, copy them to the storage folder and use that one
                 if (subsDirFile != null && subsDirFile.exists && subsDirFile.copyTo(storageFile, true)) {
                     trace("[Subtitles] found user's subs file, copied to storage file");
-                    callback(storageFile.url);
+                    callback(storageFile);
                 } else { // get them from the internet
                     var subsURL:String = (isMovie) ? MOVIES_SUBTITLES_BASEURL : SERIES_SUBTITLES_BASEURL;
                     subsURL += buildSubsFilename(itemId, lang);
@@ -64,12 +64,12 @@ package freevana.util
                     fileStream.writeBytes(fileData, 0, fileData.length);
                     fileStream.close();
                     trace("[Subtitles] Finished downloading subs: " + event);
-                    callback(toFile.url);
+                    callback(toFile);
                 } else if (event.type == IOErrorEvent.IO_ERROR || 
                         event.type == Event.CANCEL || 
                         event.type == SecurityErrorEvent.SECURITY_ERROR) {
                     trace("[Subtitles] download > Event error: " + event);
-                    callback(toFile.url);
+                    callback(toFile);
                 } else {
                     // for debugging purposes
                     trace("[Subtitles] download > event: " + event);

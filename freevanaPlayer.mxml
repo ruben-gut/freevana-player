@@ -27,9 +27,15 @@
             private var _movieIsLoading:Boolean = false;
 
             private var _settings:Settings = new Settings();
+            private var _updates:Updates = new Updates();
+            private var _updateData:Object;
             private var _db:FreevanaDB;
-            private var _subtitleURL:String;
+            private var _subtitleURL:String = "";
+            private var _downloadBtnListener:Function;
+            private var _openSubtitlesFolderListener:Function;
 
+            [Bindable]
+            private var _contactInfoTwitter:String = "Twitter: <a href='http://twitter.com/freevana/'>@freevana</a>";
             [Bindable]
             private var _dataProvMovies:ArrayCollection = new ArrayCollection();
             [Bindable]
@@ -46,14 +52,23 @@
                 css.parseCSS( "a { color: #FFE8B5; }" );
                 settingsDBInfo.styleSheet = css;
                 settingsSubsInfo.styleSheet = css;
+                contactInfo.styleSheet = css;
 
                 initLangs();
+                _updates.checkForUpdates(updatesAvailable);
 
                 if (!_settings.isSetupCompleted()) {
                     loadSettings();
                 } else {
                     loadContent();
                 }
+            }
+
+            public function getAppVersion():String {
+                var appXml:XML = NativeApplication.nativeApplication.applicationDescriptor;
+                var ns:Namespace = appXml.namespace();
+                var appVersion:String = appXml.ns::versionNumber[0];
+                return appVersion;
             }
 
             private function initLangs():void
@@ -73,24 +88,30 @@
                 currentState="settingsState";
                 var resources:Resources = new Resources();
 
-                subtitlesBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
-                    resources.selectSubtitlesDir(function (dir:File):void {
-                        if (dir != null) {
-                            _settings.setSubtitlesDir(dir);
-                            subtitlesLbl.text = dir.nativePath;
-                        }
+                if (!subtitlesBtn.enabled) {
+                    subtitlesBtn.enabled = true;
+                    subtitlesBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
+                        resources.selectSubtitlesDir(function (dir:File):void {
+                            if (dir != null) {
+                                _settings.setSubtitlesDir(dir);
+                                subtitlesLbl.text = dir.nativePath;
+                            }
+                        });
                     });
-                });
+                }
 
-                databaseBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
-                   resources.copyDB(function ():void {
-                       _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
-                       databaseLbl.text = _db.getVersion();
-                       databaseError.text = "";
-                       settingsStartBtn.enabled = true;
-                       _settings.markSetupCompleted();
-                   });
-                });
+                if (!databaseBtn.enabled) {
+                    databaseBtn.enabled = true;
+                    databaseBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
+                       resources.copyDB(function ():void {
+                           _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
+                           databaseLbl.text = _db.getVersionName();
+                           databaseError.text = "";
+                           settingsStartBtn.enabled = true;
+                           _settings.markSetupCompleted();
+                       });
+                    });
+                }
 
                 var subsDir:File = _settings.getSubtitlesDir();
                 if (subsDir != null) {
@@ -101,18 +122,23 @@
                     databaseError.text = resourceManager.getString('Strings', 'SETTINGS_DATABASE_NONE_ERROR');
                 } else {
                     _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
-                    trace(_db.getVersion());
-                    databaseLbl.text = _db.getVersion();
+                    trace(_db.getVersionName());
+                    databaseLbl.text = _db.getVersionName();
                     settingsStartBtn.enabled = true;
                     if (!_settings.isSetupCompleted()) {
                         _settings.markSetupCompleted();
                     }
                 }
+                var selSubsSizeName:String = _settings.getSubtitlesSize();
+                var selSubsSizeIdx:int = (selSubsSizeName == VideoPlayer.SUBTITLES_SMALL) ? 0 :
+                                     (selSubsSizeName == VideoPlayer.SUBTITLES_BIG) ? 2 : 1;
+                subtitlesSizeCombo.selectedIndex = selSubsSizeIdx;
             }
 
             private function loadContent():void {
                 currentState = "libraryState";
                 _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
+                checkDBUpdate(_db.getVersionName());
                 initMainDataGrids();
                 loadMoviesAndSeries();
             }
@@ -166,11 +192,28 @@
                 var res:Array = _db.getEpisodes(seasonId);
                 _dataProvEpisodes = new ArrayCollection(res);
                 if (!res || res.length == 0) {
-                    counter.text = resourceManager.getString('Strings', 'NO_EPISODES_LABEL');
+                    libraryMainLabel.text = resourceManager.getString('Strings', 'NO_EPISODES_LABEL');
                 } else {
-                    counter.text = resourceManager.getString('Strings', 'SEASONS_LABEL');
+                    libraryMainLabel.text = resourceManager.getString('Strings', 'SEASONS_LABEL');
                 }
                 currentState = "librarySeasonsState";
+            }
+
+            private function resetDownloadVideo():void
+            {
+                loadingDownloadBtn.enabled = false;
+                loadingDownloadContent.visible = false;
+                loadingDownloadLink.htmlText = '';
+                loadingSubtitleLink.text = ''
+                loadingSubtitleBtn.enabled = false;
+                if (_downloadBtnListener != null) {
+                    loadingDownloadBtn.removeEventListener(MouseEvent.CLICK, _downloadBtnListener);
+                    _downloadBtnListener = null;
+                }
+                if (_openSubtitlesFolderListener != null) {
+                    loadingSubtitleBtn.removeEventListener(MouseEvent.CLICK, _openSubtitlesFolderListener);
+                    _openSubtitlesFolderListener = null;
+                }
             }
 
             private function startGettingVideoData(item:Object, isMovie:Boolean):void 
@@ -184,6 +227,9 @@
                 }
 
                 currentState = "loadingState";
+                // Disable Download Link stuff
+                resetDownloadVideo();
+
                 loadingLbl.text = resourceManager.getString('Strings', 'CONTACTING_REMOTE_SERVER');
                 trace(item.url);
 
@@ -208,7 +254,7 @@
                     Alert.show(resourceManager.getString('Strings', 'MEGAUPLOAD_LINK_UNAVAILABLE'));
                     // Clean up
                     _movieIsLoading = false;
-                    _subtitleURL = null;
+                    _subtitleURL = "";
                     // Go back to main list
                     currentState = "libraryState";
                 }
@@ -216,8 +262,32 @@
                 // First, make sure we have subtitles, then, start megaupload
                 var subsLang:String = (subsLang.selectedItem as String);
                 var subs:Subtitles = new Subtitles();
-                subs.getSubtitlesPathForVideo(item.id, isMovie, subsLang, function(subsURL:String):void {
-                    _subtitleURL = subsURL;
+                subs.getSubtitlesPathForVideo(item.id, isMovie, subsLang, function(subsURL:File):void {
+                    if (subsURL != null && subsURL.exists) {
+                        _subtitleURL = subsURL.url;
+                    }
+
+                    // Handle Download Link stuff
+                    _downloadBtnListener = function(ev:*):void {
+                        _megaUpload.stop();
+                        _movieIsLoading = false;
+                        loadingDownloadBtn.enabled = false;
+                        loadingDownloadContent.visible = true;
+                    };
+                    loadingDownloadBtn.enabled = true;
+                    loadingDownloadBtn.addEventListener(MouseEvent.CLICK, _downloadBtnListener);
+
+                    loadingDownloadLink.htmlText = '  <a href="'+item.url+'">'+item.url+'</a>';
+                    if (subsURL.exists) {
+                        loadingSubtitleLink.text = subsURL.name;
+                        loadingSubtitleBtn.enabled = true;
+                    }
+
+                    _openSubtitlesFolderListener = function(ev:*):void {
+                        subsURL.parent.openWithDefaultApplication();
+                    };
+                    loadingSubtitleBtn.addEventListener(MouseEvent.CLICK, _openSubtitlesFolderListener);
+
                     // Start downloading from Megaupload
                     _megaUpload.start();
                     trace("[main] Starting megaupload");
@@ -226,7 +296,7 @@
 
             private function startLoadingVideo(movieURL:String):void
             {
-                counter.text = "Buffering movie...";
+                libraryMainLabel.text = "Buffering movie...";
                 var _videoPlayer:VideoPlayer = new VideoPlayer(movieURL, _subtitleURL);
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_INITIALIZING, onVideoPlayerInit);
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_READY, onVideoPlayerReady);
@@ -239,7 +309,52 @@
                 function onVideoPlayerReady(event:Event):void {
                     trace("[main] onFlowplayerReady.");
                 }
+
+                // Set subtitles size
+                _videoPlayer.setSubtitleSize(_settings.getSubtitlesSize());
+                // Start
                 _videoPlayer.init();
+            }
+
+            private function updatesAvailable(update:Object):void
+            {
+                _updateData = update;
+                if (_updateData && typeof _updateData[Updates.PLAYER] != 'undefined') {
+                    // Check if we have a different version and we haven't notified about this one yet
+                    if ((getAppVersion() != _updateData[Updates.PLAYER]) && 
+                        (_updateData[Updates.PLAYER] != _settings.getLastUpdateShown())) {
+                        var _title:String = resourceManager.getString('Strings', 'UPDATES_NEW_PLAYER_VERSION') + ': ' + _updateData[Updates.PLAYER];
+                        var _text:String = resourceManager.getString('Strings', 'UPDATES_DOWNLOAD_NEW_PLAYER');
+                        Alert.show(_text, _title, Alert.YES|Alert.NO, null, function(ev:*):void {
+                            if (ev.detail == Alert.YES) {
+                                navigateToURL(new URLRequest(_updateData[Updates.PLAYER_LINK]));
+                            }
+                        });
+                    }
+                    _settings.setLastUpdateShown(_updateData[Updates.PLAYER]);
+                    // In case we checked when no update was available
+                    if (_db != null) {
+                        checkDBUpdate(_db.getVersionName());
+                    }
+                }
+            }
+
+            private function checkDBUpdate(dbVersion:String):void
+            {
+                if (_updateData && typeof _updateData[Updates.DATABASE] != 'undefined') {
+                    // Check if we have a different version and we haven't notified about this one yet
+                    if ((dbVersion != _updateData[Updates.DATABASE]) && 
+                        (_updateData[Updates.DATABASE] != _settings.getLastDBUpdateShown())) {
+                        var _title:String = resourceManager.getString('Strings', 'UPDATES_NEW_DATABASE_VERSION') + ': ' + _updateData[Updates.DATABASE];
+                        var _text:String = resourceManager.getString('Strings', 'UPDATES_DOWNLOAD_NEW_DATABASE');
+                        Alert.show(_text, _title, Alert.YES|Alert.NO, null, function(ev:*):void {
+                            if (ev.detail == Alert.YES) {
+                                navigateToURL(new URLRequest(_updateData[Updates.DATABASE_LINK]));
+                            }
+                        });
+                    }
+                    _settings.setLastDBUpdateShown(_updateData[Updates.DATABASE]);
+                }
             }
 
             private function filterMoviesFunc(item:Object):Boolean {
@@ -260,6 +375,10 @@
             private function doFilterSeries():void {
                 _dataProvSeries.filterFunction = filterSeriesFunc;
                 _dataProvSeries.refresh();
+            }
+
+            private function setSubtitlesSize():void {
+                _settings.setSubtitlesSize(subtitlesSizeCombo.selectedItem.data);
             }
         ]]>
     </fx:Script>
@@ -302,12 +421,11 @@
                         htmlText="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_INFO')}" />
                 </s:HGroup>
 
-                <s:HGroup verticalAlign="middle" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
-                    <s:Label fontSize="13" color="#FFFFFF" fontWeight="bold"
-                        text="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_LABEL')}:" />
+                <s:HGroup verticalAlign="middle" paddingTop="0" paddingBottom="10" paddingLeft="5" paddingRight="5">
+                    <s:Label fontSize="13" fontWeight="bold" text="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_LABEL')}:" />
                     <s:Label id="databaseLbl" fontSize="13" color="#EEEEEE"
                         text="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_NONE_LABEL')}" />
-                    <s:Button id="databaseBtn" label="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_SET_LABEL')}" />
+                    <s:Button id="databaseBtn" enabled="false" label="{resourceManager.getString('Strings', 'SETTINGS_DATABASE_SET_LABEL')}" />
                     <s:Label id="databaseError" fontSize="13" color="#FF8888" />
                 </s:HGroup>
 
@@ -315,24 +433,38 @@
                     <mx:Text id="settingsSubsInfo" fontSize="12" width="670" color="#FFFFFF" 
                         htmlText="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_INFO')}" />
                 </s:HGroup>
-                <s:HGroup verticalAlign="middle" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
-                    <s:Label fontSize="13" color="#FFFFFF" fontWeight="bold"
-                        text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_LABEL')}:" />
+                <s:HGroup verticalAlign="middle" paddingTop="0" paddingBottom="10" paddingLeft="5" paddingRight="5">
+                    <s:Label fontSize="13" fontWeight="bold" text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_LABEL')}:" />
                     <s:Label id="subtitlesLbl" fontSize="13" color="#EEEEEE"
                         text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_NONE_LABEL')}" />
-                    <s:Button id="subtitlesBtn" label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SET_LABEL')}" />
-                    <s:Label fontSize="13" color="#FFEEEE" />
-                    <mx:Spacer width="100%" height="50" />
+                    <s:Button id="subtitlesBtn" enabled="false" label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SET_LABEL')}" />
                 </s:HGroup>
+
+                <s:HGroup verticalAlign="middle" paddingTop="0" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                    <s:Label fontSize="13" fontWeight="bold" text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SIZE_LABEL')}:" />
+                    <mx:ComboBox id="subtitlesSizeCombo" change="setSubtitlesSize();">
+                       <mx:ArrayCollection>
+                          <fx:Object label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SIZE_SMALL')}" data="SMALL"/>
+                          <fx:Object label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SIZE_NORMAL')}" data="NORMAL"/>
+                          <fx:Object label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SIZE_BIG')}" data="BIG"/>
+                       </mx:ArrayCollection>
+                    </mx:ComboBox>
+                    <mx:Spacer width="100%" height="40" />
+                </s:HGroup>
+
                 <s:HGroup paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
-                    <mx:Spacer width="280" height="70" />
+                    <mx:Spacer width="280" height="40" />
                     <s:Button id="settingsStartBtn" label="{resourceManager.getString('Strings', 'SETTINGS_START_BUTTON')}" 
                         height="36" click="loadContent()" enabled="false" />
-                    <mx:Spacer width="200" height="70" />
+                    <mx:Spacer width="200" height="20" />
                 </s:HGroup>
-                <s:HGroup>
-                    <mx:Spacer width="490" height="20" />
-                    <s:Label text="Copyright (C) 2011 Tirino (GNU GPL v3)" fontSize="10" color="#FFE8B5" />
+                <s:HGroup paddingTop="0" paddingBottom="0" paddingLeft="5" paddingRight="5">
+                    <mx:Spacer width="430" height="10" />
+                    <s:Label text="v{getAppVersion()} Copyright (C) 2011 Tirino (GNU GPL v3)" fontSize="10" color="#FFE8B5" />
+                </s:HGroup>
+                <s:HGroup paddingTop="0" paddingBottom="0" paddingLeft="5" paddingRight="5">
+                    <mx:Spacer width="430" height="10" />
+                    <mx:Text id="contactInfo" fontSize="10" color="#FFFFFF" htmlText="{_contactInfoTwitter}" />
                 </s:HGroup>
             </s:VGroup>
         </mx:Panel>
@@ -342,8 +474,8 @@
             title.librarySeasonsState="{resourceManager.getString('Strings', 'SEASONS_AND_EPISODES')}: {dgSeries.selectedItem.name}"
             paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
 
-            <mx:HBox width="100%" height="22" id="counterBox">
-                <s:Label id="counter" width="100%" height="22" fontSize="12" color="#A788A0"
+            <mx:HBox width="100%" height="22">
+                <s:Label id="libraryMainLabel" width="100%" height="22" fontSize="12" color="#E6A3B0"
                     text="{resourceManager.getString('Strings', 'MAIN_LABEL')}:"
                     text.librarySeasonsState="{resourceManager.getString('Strings', 'SEASONS_LABEL')}" />
             </mx:HBox>
@@ -428,17 +560,31 @@
             </mx:ControlBar>
         </mx:Panel>
 
-
         <mx:Canvas width="100%" height="100%" includeIn="loadingState">
             <mx:Panel id="loadingPanel" opaqueBackground="#39628C" width="100%" height="100%" 
                 title="{resourceManager.getString('Strings', 'VIDEO_LOADING')}"
                 paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
                 
-                <s:VGroup width="100%" height="100%" verticalAlign="middle">
-                    <mx:Spacer width="100%" height="45%" />
-                    <s:Label id="loadingLbl" width="100%" height="100%" fontSize="18" color="#FFF7B7" 
+                <s:VGroup width="100%" height="100%" verticalAlign="middle" horizontalAlign="center">
+                    <mx:Spacer width="100%" height="35%" />
+                    <s:Label id="loadingLbl" width="100%" height="50" fontSize="18" color="#FFF7B7" 
                     text="{resourceManager.getString('Strings', 'CONTACTING_REMOTE_SERVER')}" 
                     textAlign="center" />
+
+                    <mx:Spacer width="100%" height="50" />
+                    <s:Button id="loadingDownloadBtn" width="260" fontSize="14" enabled="false" 
+                        label="{resourceManager.getString('Strings', 'DOWNLOAD_STOP_BUTTON')}" />
+
+                    <s:VGroup width="100%" height="100%" verticalAlign="middle" id="loadingDownloadContent" visible="false">
+                        <mx:Text id="loadingDownloadLink" fontSize="12" width="300" color="#FFFFFF" htmlText="" />
+                        <s:HGroup paddingTop="0" paddingBottom="0" paddingLeft="0" paddingRight="0" verticalAlign="middle" >
+                            <mx:Button id="loadingSubtitleBtn" fontSize="12" width="170"
+                                label="{resourceManager.getString('Strings', 'DOWNLOAD_SUBTITLE_LABEL')}" enabled="false" />
+                            <s:Label id="loadingSubtitleLink" width="100%" height="18" fontSize="14" color="#FFF7B7" text="" />
+                        </s:HGroup>
+                        <mx:Spacer width="100%" height="30" />
+                        <s:Button label="{resourceManager.getString('Strings', 'BACK_BUTTON')}" click="currentState='libraryState';" width="100"/>
+                    </s:VGroup>
                 </s:VGroup>
             </mx:Panel>
         </mx:Canvas>

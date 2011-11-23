@@ -3,13 +3,18 @@ package freevana.util
     import flash.net.SharedObject;
     import flash.filesystem.File;
     import flash.system.Capabilities;
+    import freevana.view.VideoPlayer;
 
     public class Settings
     {
         private static var SHARED_OBJECT_NAME:String = "Settings";
         private static var SETUP_COMPLETED_KEY:String = "setup_completed";
         private static var PREFERRED_LANG_KEY:String = "preferred_lang";
+        private static var SUBTITLES_SIZE_KEY:String = "subtitles_size";
         private static var SUBTITLES_DIR_KEY:String = "subtitles_dir";
+        private static var LAST_UPDATE_CHECK:String = "last_update_check";
+        private static var LAST_UPDATE_SHOWN:String = "last_update_shown";
+        private static var LAST_DB_UPDATE_SHOWN:String = "last_db_update_shown";
 
         private var sharedObj:SharedObject;
 
@@ -58,6 +63,86 @@ package freevana.util
         }
 
         /**
+        * Return the select subtitles size
+        */
+        public function getSubtitlesSize():String
+        {
+            var res:String = String(this.getValue(SUBTITLES_SIZE_KEY));
+            if (!res) {
+                res = VideoPlayer.SUBTITLES_NORMAL;
+            }
+            return res;
+        }
+
+        /**
+        * Save the selected subtitles size
+        */
+        public function setSubtitlesSize(subsSize:String):void
+        {
+            this.setValue(SUBTITLES_SIZE_KEY, subsSize.toUpperCase());
+        }
+
+        /**
+        * Return when we last checked for updates
+        */
+        public function getLastUpdateCheck():Number
+        {
+            var res:int = int(this.getValue(LAST_UPDATE_CHECK));
+            if (!res) {
+                res = 0;
+            }
+            return res;
+        }
+
+        /**
+        * Set when we last checked for updates
+        */
+        public function setLastUpdateCheck(updateCheck:Number):void
+        {
+            this.setValue(LAST_UPDATE_CHECK, updateCheck);
+        }
+
+        /**
+        * Return the last update number that was shown to the user
+        */
+        public function getLastUpdateShown():String
+        {
+            var res:String = String(this.getValue(LAST_UPDATE_SHOWN));
+            if (!res) {
+                res = '';
+            }
+            return res;
+        }
+
+        /**
+        * Set the update number that was last shown to the user
+        */
+        public function setLastUpdateShown(updateVersion:String):void
+        {
+            this.setValue(LAST_UPDATE_SHOWN, updateVersion);
+        }
+
+        /**
+        * Return the last update number that was shown to the user
+        */
+        public function getLastDBUpdateShown():String
+        {
+            var res:String = String(this.getValue(LAST_DB_UPDATE_SHOWN));
+            if (!res) {
+                res = '';
+            }
+            return res;
+        }
+
+        /**
+        * Set the update number that was last shown to the user
+        */
+        public function setLastDBUpdateShown(updateVersion:String):void
+        {
+            this.setValue(LAST_DB_UPDATE_SHOWN, updateVersion);
+        }
+
+        /**
         * Return the preferred language set by the user, or the default one
         * according to their system settings
         */
@@ -69,7 +154,7 @@ package freevana.util
                 try {
                     dir = new File(res);
                 } catch (error:Error) {
-                    trace("[Settings] " + error.message);
+                    trace("[Settings] getSubtitlesDir " + error.message);
                 }
                 // Make sure the dir still exists
                 if (dir != null && !dir.exists) {
