@@ -9,11 +9,13 @@ package freevana.util
     {
         public static const PLAYER:String = 'player';
         public static const PLAYER_LINK:String = 'player_link';
+        public static const PLAYER_TEXT:String = 'player_text';
         public static const DATABASE:String = 'db';
         public static const DATABASE_LINK:String = 'db_link';
+        public static const DATABASE_TEXT:String = 'db_text';
 
         private static const UPDATES_URL:String = 'http://tirino.github.com/freevana/updates.json';
-        private static const CHECK_INTERVAL:int = 60 * 60 * 24; // 24 hours
+        private static const CHECK_INTERVAL:int = 60 * 60 * 12; // 24 hours
 
         private var _urlLoader:URLLoader;
         private var _settings:Settings;
@@ -63,7 +65,8 @@ package freevana.util
                     trace("[Updates] download > Event error: " + event);
                 }
             }
-            _urlLoader.load(new URLRequest(UPDATES_URL));
+            var _time:Date = new Date();
+            _urlLoader.load(new URLRequest(UPDATES_URL + '?' + _time.time));
         }
    }
 }

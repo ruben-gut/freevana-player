@@ -12,19 +12,33 @@ package freevana.util
 
         public function FreevanaDB(dbFile:String):void
         {
-            _dbFile = File.applicationStorageDirectory.resolvePath(dbFile);
+            _dbFile = Resources.DATA_STORAGE_DIR.resolvePath(dbFile);
             trace("[FreevanaDB] dbFile: " + _dbFile.nativePath);
-            _sqlConn.open(_dbFile);
             _dbVersionNumber = getVersionNumber();
+        }
+
+        public function close():void
+        {
+            if (_sqlConn != null)
+            {
+                try {
+                    _sqlConn.close();
+                } catch (error:*) {
+                    trace(error);
+                }
+            }
         }
 
         public function runQuery(query:String):Array
         {
+            _sqlConn.open(_dbFile);
             var statement:SQLStatement = new SQLStatement();
             statement.sqlConnection = _sqlConn;
             statement.text = query;
             statement.execute();
-            return statement.getResult().data;
+            var queryData:Array = statement.getResult().data;
+            _sqlConn.close();
+            return queryData;
         }
 
         public function getVersionNumber():String

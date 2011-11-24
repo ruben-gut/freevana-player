@@ -11,6 +11,7 @@ package freevana.util
     [ResourceBundle("Strings")]
     public class Resources
     {
+        public static var DATA_STORAGE_DIR:File = File.applicationStorageDirectory;
         public static var DATABASE_FILE_DIR:String = "db";
         public static var DATABASE_FILE_NAME:String = "freevana.db";
         public static var DATABASE_FILE_PATH:String = DATABASE_FILE_DIR + File.separator + DATABASE_FILE_NAME;
@@ -65,7 +66,7 @@ package freevana.util
 
         public function checkDB():Boolean
         {
-            var db:File = File.applicationStorageDirectory.resolvePath(DATABASE_FILE_PATH);
+            var db:File = DATA_STORAGE_DIR.resolvePath(DATABASE_FILE_PATH);
             return db.exists;
         }
 
@@ -82,16 +83,27 @@ package freevana.util
         private function doCopyDB(event:Event):void
         {
             var selectedFile:File = (event.target as File);
-            var targetFile:File = File.applicationStorageDirectory.resolvePath(DATABASE_FILE_PATH);
+            var targetFile:File = DATA_STORAGE_DIR.resolvePath(DATABASE_FILE_PATH);
 
             trace("[Resources] " + selectedFile.nativePath + " => " + targetFile.nativePath);
+            // Delete old one
+            try {
+                if (targetFile.exists) {
+                    targetFile.deleteFile();
+                }
+            } catch (error:Error) {
+                //Alert.show(error.message);
+                trace("[Resources] Error Deleting: " + error.message);
+            }
+            // Copy
             try {
                 selectedFile.copyTo(targetFile, true);
                 if (_dbCopyCallback != null) {
                     _dbCopyCallback();
                 }
             } catch (error:Error) {
-                trace("[Resources] Error: " + error.message);
+                Alert.show(error.message);
+                trace("[Resources] Error Copying: " + error.message);
             }
         }
 

@@ -103,13 +103,13 @@
                 if (!databaseBtn.enabled) {
                     databaseBtn.enabled = true;
                     databaseBtn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
-                       resources.copyDB(function ():void {
-                           _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
-                           databaseLbl.text = _db.getVersionName();
-                           databaseError.text = "";
-                           settingsStartBtn.enabled = true;
-                           _settings.markSetupCompleted();
-                       });
+                        resources.copyDB(function ():void {
+                            _db = new FreevanaDB(Resources.DATABASE_FILE_PATH);
+                            databaseLbl.text = _db.getVersionName();
+                            databaseError.text = "";
+                            settingsStartBtn.enabled = true;
+                            _settings.markSetupCompleted();
+                        });
                     });
                 }
 
@@ -325,6 +325,10 @@
                         (_updateData[Updates.PLAYER] != _settings.getLastUpdateShown())) {
                         var _title:String = resourceManager.getString('Strings', 'UPDATES_NEW_PLAYER_VERSION') + ': ' + _updateData[Updates.PLAYER];
                         var _text:String = resourceManager.getString('Strings', 'UPDATES_DOWNLOAD_NEW_PLAYER');
+                        // Add extra text if it's available
+                        if (typeof _updateData[Updates.PLAYER_TEXT] != 'undefined') {
+                            _text += "\n" + _updateData[Updates.PLAYER_TEXT];
+                        }
                         Alert.show(_text, _title, Alert.YES|Alert.NO, null, function(ev:*):void {
                             if (ev.detail == Alert.YES) {
                                 navigateToURL(new URLRequest(_updateData[Updates.PLAYER_LINK]));
@@ -347,6 +351,10 @@
                         (_updateData[Updates.DATABASE] != _settings.getLastDBUpdateShown())) {
                         var _title:String = resourceManager.getString('Strings', 'UPDATES_NEW_DATABASE_VERSION') + ': ' + _updateData[Updates.DATABASE];
                         var _text:String = resourceManager.getString('Strings', 'UPDATES_DOWNLOAD_NEW_DATABASE');
+                        // Add extra text if it's available
+                        if (typeof _updateData[Updates.DATABASE_TEXT] != 'undefined') {
+                            _text += "\n" + _updateData[Updates.DATABASE_TEXT];
+                        }
                         Alert.show(_text, _title, Alert.YES|Alert.NO, null, function(ev:*):void {
                             if (ev.detail == Alert.YES) {
                                 navigateToURL(new URLRequest(_updateData[Updates.DATABASE_LINK]));

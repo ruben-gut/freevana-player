@@ -90,7 +90,7 @@ package freevana.util
 
         private function buildLocalStoragePathForSubs(itemId:int, isMovie:Boolean, lang:String):File
         {
-            return buildPathForSubs(File.applicationStorageDirectory, itemId, isMovie, lang);
+            return buildPathForSubs(Resources.DATA_STORAGE_DIR, itemId, isMovie, lang);
         }
 
         private function buildPathForSubs(baseFolder:File, itemId:int, isMovie:Boolean, lang:String):File
