@@ -8,6 +8,9 @@ package freevana.util
     import flash.net.FileFilter;
     import flash.events.Event;
 
+    /*
+    * @author tirino
+    */
     [ResourceBundle("Strings")]
     public class Resources
     {

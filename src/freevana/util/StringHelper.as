@@ -1,5 +1,8 @@
 package freevana.util
 {
+    /*
+    * @author tirino
+    */
     public class StringHelper
     {
         public static function trim(str:String):String

@@ -6,6 +6,9 @@ package freevana.util
     import flash.events.*;
     import flash.utils.ByteArray;
 
+    /*
+    * @author tirino
+    */
     public class Subtitles
     {
         private static var MOVIES_SUBTITLES_BASEURL:String = 'http://sc.cuevana.tv/files/sub/';

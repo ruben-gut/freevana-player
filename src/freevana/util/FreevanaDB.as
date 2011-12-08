@@ -4,6 +4,9 @@ package freevana.util
     import flash.data.SQLStatement;
     import flash.filesystem.File;
 
+    /*
+    * @author tirino
+    */
     public class FreevanaDB
     {
         private var _sqlConn:SQLConnection = new SQLConnection();

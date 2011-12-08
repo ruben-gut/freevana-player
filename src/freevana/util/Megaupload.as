@@ -8,9 +8,12 @@ package freevana.util
     import flash.net.URLRequest;
     import flash.net.URLLoader;
     import flash.utils.Timer;
-    
+
     //import flash.html.HTMLLoader;
 
+    /*
+    * @author tirino
+    */
     public class Megaupload extends EventDispatcher
     {
         public static var PAGE_LOADED_EVENT:String = "PageLoadedEvent";
@@ -23,6 +26,7 @@ package freevana.util
         private var _urlLoader:URLLoader;
         private var _counterTotal:int = 60;
         private var _timer:Timer = null;
+        private var _forcedStop:Boolean = false;
         public var _privateDownloadURL:String = null;
 
         public var downloadURL:String = null;
@@ -43,6 +47,7 @@ package freevana.util
 
         public function start():void
         {
+            _forcedStop = false;
             _urlLoader = new URLLoader();
             _urlLoader.load(new URLRequest(_megaURL));
             _urlLoader.addEventListener(Event.COMPLETE, onPageDownloaded);
@@ -50,6 +55,7 @@ package freevana.util
 
         public function stop():void
         {
+            _forcedStop = true;
             if (_timer != null) {
                 _timer.removeEventListener(TimerEvent.TIMER_COMPLETE, doFinishCount);
                 _timer.stop();
@@ -64,7 +70,7 @@ package freevana.util
             _counterTotal = getCounterInitValue(html_) + 1; // one more second, just in case
             _privateDownloadURL = getDownloadLink(html_);
 
-            if (_privateDownloadURL && _counterTotal) {
+            if (_privateDownloadURL && _counterTotal && !_forcedStop) {
                 _timer = new Timer(1000, _counterTotal);
                 _timer.addEventListener(TimerEvent.TIMER, doCount);
                 _timer.addEventListener(TimerEvent.TIMER_COMPLETE, doFinishCount);

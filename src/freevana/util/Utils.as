@@ -2,6 +2,9 @@ package freevana.util
 {
     import flash.system.Capabilities;
 
+    /*
+    * @author tirino
+    */
     public class Utils
     {
         public static function isLinux():Boolean

@@ -5,6 +5,9 @@ package freevana.util
     import flash.net.URLLoader;
     import com.adobe.serialization.json.JSON; 
 
+    /*
+    * @author tirino
+    */
     public class Updates
     {
         public static const PLAYER:String = 'player';

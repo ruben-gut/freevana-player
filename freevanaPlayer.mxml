@@ -11,6 +11,7 @@
     <fx:Script>
         <![CDATA[
             import mx.controls.Alert;
+            import mx.core.UIComponent;
             import mx.utils.ObjectUtil;
             import mx.collections.ArrayCollection;
 
@@ -24,6 +25,9 @@
             import freevana.util.*;
             import freevana.view.*;
 
+            private static const HELP_BASE_URL:String = 'http://tirino.github.com/freevana/help/';
+
+            private var _helpHtmlLoaded:Boolean = false;
             private var _movieIsLoading:Boolean = false;
 
             private var _settings:Settings = new Settings();
@@ -71,15 +75,42 @@
                 return appVersion;
             }
 
-            private function initLangs():void
+            private function getUserLang():String
             {
                 var langs:Array = Capabilities.languages;
-                var prefLang:String = (langs[0] as String).toUpperCase();
+                return (langs[0] as String).toUpperCase();
+            }
+
+            private function initLangs():void
+            {
+                var prefLang:String = getUserLang();
                 trace("[main] Lang is: " + prefLang);
                 if (prefLang.indexOf("EN") != -1) {
                     resourceManager.localeChain = ['en_US'];
                 } else {
                     resourceManager.localeChain = ['es_ES'];
+                }
+            }
+
+            public function loadHelp():void
+            {
+                currentState='helpState';
+                if (!_helpHtmlLoaded) {
+                    var helpFile:String = HELP_BASE_URL + getUserLang() + '_' + getAppVersion() + '.html';
+                    trace(helpFile);
+                    var htmlLoader:HTMLLoader = new HTMLLoader();
+                    var urlReq:URLRequest = new URLRequest(helpFile);
+                    var myComp:UIComponent = new UIComponent();
+                    htmlLoader.width = 670;
+                    htmlLoader.height = 300;
+                    htmlLoader.load(urlReq);
+                    myComp.addChild(htmlLoader);
+                    htmlLoader.addEventListener(Event.COMPLETE, function(ev:Event):void {
+                        trace("Loaded help html");
+                        helpHtml.removeAllChildren();
+                        helpHtml.addChild(myComp);
+                    });
+                    _helpHtmlLoaded = true;
                 }
             }
 
@@ -129,10 +160,17 @@
                         _settings.markSetupCompleted();
                     }
                 }
+                // Select correct subs size
                 var selSubsSizeName:String = _settings.getSubtitlesSize();
                 var selSubsSizeIdx:int = (selSubsSizeName == VideoPlayer.SUBTITLES_SMALL) ? 0 :
                                      (selSubsSizeName == VideoPlayer.SUBTITLES_BIG) ? 2 : 1;
                 subtitlesSizeCombo.selectedIndex = selSubsSizeIdx;
+
+                // Select preferred player
+                var selPreferredPlayer:String = _settings.getPreferredPlayer();
+                trace("selPreferredPlayer: " + selPreferredPlayer + ", " + VideoPlayer.VIDEO_PLAYER_OWN);
+                var selPreferredPlayerIdx:int = (selPreferredPlayer == VideoPlayer.VIDEO_PLAYER_OWN) ? 0 : 1;
+                preferredPlayerCombo.selectedIndex = selPreferredPlayerIdx;
             }
 
             private function loadContent():void {
@@ -216,6 +254,13 @@
                 }
             }
 
+            private function resetVideoPlayer():void
+            {
+                videoCanvas.removeAllChildren();
+                _movieIsLoading = false;
+                _subtitleURL = "";
+            }
+
             private function startGettingVideoData(item:Object, isMovie:Boolean):void 
             {
                 // this is needed in case multiple double-clicks are triggered
@@ -253,9 +298,7 @@
                 function onLinkUnavailable(ev:Event):void {
                     Alert.show(resourceManager.getString('Strings', 'MEGAUPLOAD_LINK_UNAVAILABLE'));
                     // Clean up
-                    _movieIsLoading = false;
-                    _subtitleURL = "";
-                    // Go back to main list
+                    resetVideoPlayer()
                     currentState = "libraryState";
                 }
 
@@ -297,17 +340,37 @@
             private function startLoadingVideo(movieURL:String):void
             {
                 libraryMainLabel.text = "Buffering movie...";
-                var _videoPlayer:VideoPlayer = new VideoPlayer(movieURL, _subtitleURL);
+                var _videoPlayer:IVideoPlayer;
+                if (_settings.getPreferredPlayer() == VideoPlayer.VIDEO_PLAYER_FLOW) {
+                    _videoPlayer = new FlowVideoPlayer(movieURL, _subtitleURL);
+                } else {
+                    _videoPlayer = new FlashVideoPlayer(movieURL, _subtitleURL);
+                }
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_INITIALIZING, onVideoPlayerInit);
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_READY, onVideoPlayerReady);
+                _videoPlayer.addEventListener(VideoPlayer.PLAYER_STOPPED, onVideoPlayerStopped);
+                _videoPlayer.addEventListener(VideoPlayer.VIDEO_NOT_AVAILABLE, onVideoNotAvailable);
 
                 function onVideoPlayerInit(event:Event):void {
                     // Change to VideoView
                     currentState = "videoState";
-                    videoCanvas.addChild(_videoPlayer.videoComponent);
+                    videoCanvas.addChild(_videoPlayer.getUIComponent());
+                    _videoPlayer.onAddedToStage();
                 }
+
                 function onVideoPlayerReady(event:Event):void {
-                    trace("[main] onFlowplayerReady.");
+                    trace("[main] onVideoPlayerReady.");
+                }
+
+                function onVideoPlayerStopped(event:Event):void {
+                    resetVideoPlayer();
+                    currentState = "libraryState";
+                }
+
+                function onVideoNotAvailable(event:Event):void {
+                    Alert.show(resourceManager.getString('Strings', 'VIDEO_NOT_AVAILABLE'));
+                    resetVideoPlayer();
+                    currentState = "libraryState";
                 }
 
                 // Set subtitles size
@@ -388,6 +451,10 @@
             private function setSubtitlesSize():void {
                 _settings.setSubtitlesSize(subtitlesSizeCombo.selectedItem.data);
             }
+
+            private function setPreferredPlayer():void {
+                _settings.setPreferredPlayer(preferredPlayerCombo.selectedItem.data);
+            }
         ]]>
     </fx:Script>
     <fx:Metadata>
@@ -399,6 +466,7 @@
         <s:State name="libraryState" stateGroups="library"/>
         <s:State name="librarySeasonsState" stateGroups="library" />
         <s:State name="loadingState" />
+        <s:State name="helpState" />
         <s:State name="videoState" />
     </s:states>
     <s:transitions>
@@ -448,7 +516,7 @@
                     <s:Button id="subtitlesBtn" enabled="false" label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SET_LABEL')}" />
                 </s:HGroup>
 
-                <s:HGroup verticalAlign="middle" paddingTop="0" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                <s:HGroup verticalAlign="middle" paddingTop="0" paddingBottom="10" paddingLeft="5" paddingRight="5">
                     <s:Label fontSize="13" fontWeight="bold" text="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SIZE_LABEL')}:" />
                     <mx:ComboBox id="subtitlesSizeCombo" change="setSubtitlesSize();">
                        <mx:ArrayCollection>
@@ -457,7 +525,17 @@
                           <fx:Object label="{resourceManager.getString('Strings', 'SETTINGS_SUBTITLES_SIZE_BIG')}" data="BIG"/>
                        </mx:ArrayCollection>
                     </mx:ComboBox>
-                    <mx:Spacer width="100%" height="40" />
+                </s:HGroup>
+
+                <s:HGroup verticalAlign="middle" paddingTop="0" paddingBottom="0" paddingLeft="5" paddingRight="5">
+                    <s:Label fontSize="13" fontWeight="bold" text="{resourceManager.getString('Strings', 'SETTINGS_PREFERRED_PLAYER_LABEL')}:" />
+                    <mx:ComboBox id="preferredPlayerCombo" change="setPreferredPlayer();">
+                       <mx:ArrayCollection>
+                          <fx:Object label="{resourceManager.getString('Strings', 'SETTINGS_PREFERRED_PLAYER_NEW')}" data="OWN"/>
+                          <fx:Object label="{resourceManager.getString('Strings', 'SETTINGS_PREFERRED_PLAYER_OLD')}" data="FLOW"/>
+                       </mx:ArrayCollection>
+                    </mx:ComboBox>
+                    <mx:Spacer width="100%" height="20" />
                 </s:HGroup>
 
                 <s:HGroup paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
@@ -564,6 +642,7 @@
                    </mx:ArrayCollection>
                 </mx:ComboBox>
                 <mx:Spacer width="60%"/>
+                <s:Button label="{resourceManager.getString('Strings', 'HELP_LABEL')}" click="loadHelp();" />
                 <s:Button label="{resourceManager.getString('Strings', 'SETTINGS_LABEL')}" click="loadSettings();" />
             </mx:ControlBar>
         </mx:Panel>
@@ -596,6 +675,16 @@
                 </s:VGroup>
             </mx:Panel>
         </mx:Canvas>
+        <mx:Canvas id="helpCanvas" width="100%" height="100%" includeIn="helpState">
+            <mx:Panel id="helpPanel" opaqueBackground="#39628C" width="100%" height="100%" title="{resourceManager.getString('Strings', 'HELP_LABEL')}"
+                paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+                <mx:Canvas id="helpHtml" width="100%" height="90%">
+                    <s:Label width="100%" fontSize="14" color="#FFF7B7" text="{resourceManager.getString('Strings', 'HELP_LOADING')}" textAlign="center" />
+                </mx:Canvas>
+                <s:Button label="{resourceManager.getString('Strings', 'BACK_BUTTON')}" click="currentState='libraryState';" width="100"/>
+            </mx:Panel>
+        </mx:Canvas>
+
         <mx:Canvas id="videoCanvas" width="100%" opaqueBackground="#000000" height="100%" includeIn="videoState"/>
     </mx:Canvas>
 

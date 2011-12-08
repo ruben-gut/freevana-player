@@ -5,11 +5,15 @@ package freevana.util
     import flash.system.Capabilities;
     import freevana.view.VideoPlayer;
 
+    /*
+    * @author tirino
+    */
     public class Settings
     {
         private static var SHARED_OBJECT_NAME:String = "Settings";
         private static var SETUP_COMPLETED_KEY:String = "setup_completed";
         private static var PREFERRED_LANG_KEY:String = "preferred_lang";
+        private static var PREFERRED_PLAYER_KEY:String = "preferred_player";
         private static var SUBTITLES_SIZE_KEY:String = "subtitles_size";
         private static var SUBTITLES_DIR_KEY:String = "subtitles_dir";
         private static var LAST_UPDATE_CHECK:String = "last_update_check";
@@ -47,7 +51,7 @@ package freevana.util
         public function getPreferredLanguage():String
         {
             var res:String = String(this.getValue(PREFERRED_LANG_KEY));
-            if (!res) {
+            if (!res || res == 'null') {
                 var langs:Array = Capabilities.languages;
                 res = (langs[0] as String).toUpperCase();
             }
@@ -63,12 +67,31 @@ package freevana.util
         }
 
         /**
+        * Return the preferred player set by the user, or the default one
+        */
+        public function getPreferredPlayer():String
+        {
+            var res:String = String(this.getValue(PREFERRED_PLAYER_KEY));
+            if (!res || res == 'null') {
+                res = VideoPlayer.VIDEO_PLAYER_OWN;
+            }
+            return res;
+        }
+
+        /**
+        * Save the preferred player for the user
+        */
+        public function setPreferredPlayer(player:String):void
+        {
+            this.setValue(PREFERRED_PLAYER_KEY, player.toUpperCase());
+        }
+        /**
         * Return the select subtitles size
         */
         public function getSubtitlesSize():String
         {
             var res:String = String(this.getValue(SUBTITLES_SIZE_KEY));
-            if (!res) {
+            if (!res || res == 'null') {
                 res = VideoPlayer.SUBTITLES_NORMAL;
             }
             return res;
@@ -108,7 +131,7 @@ package freevana.util
         public function getLastUpdateShown():String
         {
             var res:String = String(this.getValue(LAST_UPDATE_SHOWN));
-            if (!res) {
+            if (!res || res == 'null') {
                 res = '';
             }
             return res;
@@ -128,7 +151,7 @@ package freevana.util
         public function getLastDBUpdateShown():String
         {
             var res:String = String(this.getValue(LAST_DB_UPDATE_SHOWN));
-            if (!res) {
+            if (!res || res == 'null') {
                 res = '';
             }
             return res;
