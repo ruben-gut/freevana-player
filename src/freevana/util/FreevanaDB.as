@@ -70,12 +70,15 @@ package freevana.util
         {
             var moviesQuery:String;
             if (_dbVersionNumber == "1.0") {
-                moviesQuery = "SELECT m.*, src.url FROM movies m INNER JOIN movie_sources src " +
+                moviesQuery = "SELECT m.*, src.url FROM movies m INNER JOIN movie_sources src, src.source " +
                             "ON (src.movie_id=m.id AND src.source = 'megaupload') ORDER BY m.name";
             } else {
-                moviesQuery = "SELECT m.*, (m.name || ' [' || src.definition || 'p]') AS name, src.url " +
+                moviesQuery = "SELECT m.*, (m.name || ' [' || src.definition || 'p] (' || " +
+                            " CASE (src.source) WHEN 'wupload' THEN 'Wu' ELSE 'MU' END || ')') as name, " +
+                            "src.url, src.source " +
                             "FROM movies m INNER JOIN movie_sources src " +
-                            "ON (src.movie_id=m.id AND src.source = 'megaupload') ORDER BY m.name";
+                            "ON (src.movie_id=m.id AND (src.source='megaupload' OR src.source='wupload')) " + 
+                            "ORDER BY m.name ASC, src.source DESC";
             }
             return runQuery(moviesQuery);
         }
@@ -98,15 +101,17 @@ package freevana.util
             // TEXT column, because some episode numbers can be in the format: 20-21
             var episodesQuery:String;
             if (_dbVersionNumber == "1.0") {
-                episodesQuery = "SELECT e.*, (e.number || ') ' || e.short_name) as name, src.url " +
+                episodesQuery = "SELECT e.*, (e.number || ') ' || e.short_name) as name, src.url, src.source " +
                                         "FROM series_episodes e INNER JOIN series_episode_sources src " + 
                                         "ON (src.series_episode_id = e.id AND src.source ='megaupload') " +
                                         "WHERE e.season_id="+seasonId+" ORDER BY CAST(e.number AS INTEGER)";
             } else {
-                episodesQuery = "SELECT e.*, (e.number || ') ' || e.name || ' [' || src.definition || 'p]') as name, src.url " +
+                episodesQuery = "SELECT e.*, (e.number || ') ' || e.name || ' [' || src.definition || 'p] (' || " + 
+                                        " CASE (src.source) WHEN 'wupload' THEN 'Wu' ELSE 'MU' END || ')') as name, " + 
+                                        "src.url, src.source " +
                                         "FROM series_episodes e INNER JOIN series_episode_sources src " + 
-                                        "ON (src.series_episode_id = e.id AND src.source ='megaupload') " +
-                                        "WHERE e.season_id="+seasonId+" ORDER BY CAST(e.number AS INTEGER)";
+                                        "ON (src.series_episode_id = e.id AND (src.source='megaupload' OR src.source='wupload')) " +
+                                        "WHERE e.season_id="+seasonId+" ORDER BY CAST(e.number AS INTEGER) ASC, src.source DESC";
             }
             return runQuery(episodesQuery);
         }

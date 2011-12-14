@@ -14,6 +14,11 @@
             import mx.core.UIComponent;
             import mx.utils.ObjectUtil;
             import mx.collections.ArrayCollection;
+            import mx.managers.PopUpManager;
+
+            import spark.components.Image;
+            import spark.components.TextInput;
+            import spark.components.Button;
 
             import flash.events.Event;
             import flash.events.MouseEvent;
@@ -22,6 +27,7 @@
             import flash.net.URLRequest;
             import flash.net.URLLoader;
 
+            import freevana.download.*;
             import freevana.util.*;
             import freevana.view.*;
 
@@ -256,13 +262,17 @@
 
             private function resetVideoPlayer():void
             {
-                videoCanvas.removeAllChildren();
                 _movieIsLoading = false;
                 _subtitleURL = "";
+                if (videoCanvas && videoCanvas != null) {
+                    videoCanvas.removeAllChildren();
+                }
             }
 
             private function startGettingVideoData(item:Object, isMovie:Boolean):void 
             {
+                var _mainApp:* = this;
+                
                 // this is needed in case multiple double-clicks are triggered
                 if (_movieIsLoading) {
                     trace("[main] already loding a movie!")
@@ -272,37 +282,71 @@
                 }
 
                 currentState = "loadingState";
+
                 // Disable Download Link stuff
                 resetDownloadVideo();
 
                 loadingLbl.text = resourceManager.getString('Strings', 'CONTACTING_REMOTE_SERVER');
                 trace(item.url);
 
-                var _megaUpload:Megaupload = new Megaupload(item.url);
-                _megaUpload.addEventListener(Megaupload.PAGE_LOADED_EVENT, onPageLoaded);
-                _megaUpload.addEventListener(Megaupload.COUNTER_CHANGED_EVENT, onCounterChanged);
-                _megaUpload.addEventListener(Megaupload.LINK_AVAILABLE_EVENT, onLinkAvailable);
-                _megaUpload.addEventListener(Megaupload.LINK_UNAVAILABLE_EVENT, onLinkUnavailable);
+                var _fileHost:IFileHost = FileHost.create(item);
+                _fileHost.addEventListener(FileHost.PAGE_LOADED_EVENT, onPageLoaded);
+                _fileHost.addEventListener(FileHost.COUNTER_CHANGED_EVENT, onCounterChanged);
+                _fileHost.addEventListener(FileHost.RECAPTCHA_LOADED_EVENT, onRecaptchaNeeded);
+                _fileHost.addEventListener(FileHost.LINK_AVAILABLE_EVENT, onLinkAvailable);
+                _fileHost.addEventListener(FileHost.LINK_UNAVAILABLE_EVENT, onLinkUnavailable);
 
                 function onPageLoaded(ev:Event):void {
                     trace("[main] Page Loaded: " + ev.toString());
                 }
                 function onCounterChanged(ev:Event):void {
-                    loadingLbl.text = resourceManager.getString('Strings', 'VIDEO_WILL_START') + _megaUpload.counterValue;
+                    loadingLbl.text = resourceManager.getString('Strings', 'VIDEO_WILL_START') + _fileHost.getCounterValue();
+                }
+                function onRecaptchaNeeded(ev:Event):void {
+                    var panel:Panel = new Panel();
+                    panel.title = "ReCaptcha";
+
+
+                    var img:spark.components.Image = new spark.components.Image();
+                    img.source = _fileHost.getRecaptchaImageURL();
+                    var txt:spark.components.TextInput = new spark.components.TextInput();
+                    txt.width = 300;
+                    txt.height = 30;
+                    var btn:spark.components.Button = new spark.components.Button();
+                    btn.label = resourceManager.getString('Strings', 'FILEHOST_SEND_RECAPTCHA');
+
+                    btn.width = 200;
+                    btn.addEventListener(MouseEvent.CLICK, function(ev:Event):void {
+                        trace("You entered: " + txt.text);
+                        _fileHost.sendRecaptchaText(txt.text);
+                        PopUpManager.removePopUp(panel);
+                    });
+
+                    var vgrp:spark.components.VGroup = new spark.components.VGroup();
+                    vgrp.width = 350;
+                    vgrp.height = 170;
+                    vgrp.horizontalAlign = "center";
+                    vgrp.addElement(img);
+                    vgrp.addElement(txt);
+                    vgrp.addElement(btn);
+
+                    // Add and open Popup
+                    panel.addChild(vgrp);
+                    PopUpManager.addPopUp(panel, _mainApp, true);
+                    PopUpManager.centerPopUp(panel);
                 }
                 function onLinkAvailable(ev:Event):void {
-                    trace("[main] Link is: " + _megaUpload.downloadURL);
-                    startLoadingVideo(_megaUpload.downloadURL);
+                    trace("[main] Link is: " + _fileHost.getDownloadURL());
+                    startLoadingVideo(_fileHost.getDownloadURL());
                 }
-                
                 function onLinkUnavailable(ev:Event):void {
-                    Alert.show(resourceManager.getString('Strings', 'MEGAUPLOAD_LINK_UNAVAILABLE'));
+                    Alert.show(resourceManager.getString('Strings', 'FILEHOST_LINK_UNAVAILABLE'));
                     // Clean up
                     resetVideoPlayer()
                     currentState = "libraryState";
                 }
 
-                // First, make sure we have subtitles, then, start megaupload
+                // First, make sure we have subtitles, then, start filehost
                 var subsLang:String = (subsLang.selectedItem as String);
                 var subs:Subtitles = new Subtitles();
                 subs.getSubtitlesPathForVideo(item.id, isMovie, subsLang, function(subsURL:File):void {
@@ -312,7 +356,7 @@
 
                     // Handle Download Link stuff
                     _downloadBtnListener = function(ev:*):void {
-                        _megaUpload.stop();
+                        _fileHost.stop();
                         _movieIsLoading = false;
                         loadingDownloadBtn.enabled = false;
                         loadingDownloadContent.visible = true;
@@ -331,21 +375,16 @@
                     };
                     loadingSubtitleBtn.addEventListener(MouseEvent.CLICK, _openSubtitlesFolderListener);
 
-                    // Start downloading from Megaupload
-                    _megaUpload.start();
-                    trace("[main] Starting megaupload");
+                    // Start downloading from filehost
+                    _fileHost.start();
+                    trace("[main] Starting filehost");
                 });
             }
 
             private function startLoadingVideo(movieURL:String):void
             {
                 libraryMainLabel.text = "Buffering movie...";
-                var _videoPlayer:IVideoPlayer;
-                if (_settings.getPreferredPlayer() == VideoPlayer.VIDEO_PLAYER_FLOW) {
-                    _videoPlayer = new FlowVideoPlayer(movieURL, _subtitleURL);
-                } else {
-                    _videoPlayer = new FlashVideoPlayer(movieURL, _subtitleURL);
-                }
+                var _videoPlayer:IVideoPlayer = VideoPlayer.create(_settings, movieURL, _subtitleURL);
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_INITIALIZING, onVideoPlayerInit);
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_READY, onVideoPlayerReady);
                 _videoPlayer.addEventListener(VideoPlayer.PLAYER_STOPPED, onVideoPlayerStopped);
@@ -665,7 +704,7 @@
                     <s:VGroup width="100%" height="100%" verticalAlign="middle" id="loadingDownloadContent" visible="false">
                         <mx:Text id="loadingDownloadLink" fontSize="12" width="300" color="#FFFFFF" htmlText="" />
                         <s:HGroup paddingTop="0" paddingBottom="0" paddingLeft="0" paddingRight="0" verticalAlign="middle" >
-                            <mx:Button id="loadingSubtitleBtn" fontSize="12" width="170"
+                            <s:Button id="loadingSubtitleBtn" fontSize="12" width="170"
                                 label="{resourceManager.getString('Strings', 'DOWNLOAD_SUBTITLE_LABEL')}" enabled="false" />
                             <s:Label id="loadingSubtitleLink" width="100%" height="18" fontSize="14" color="#FFF7B7" text="" />
                         </s:HGroup>

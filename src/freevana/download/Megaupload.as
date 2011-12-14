@@ -1,4 +1,4 @@
-package freevana.util
+package freevana.download
 {
     //import mx.controls.Alert;
     import flash.events.Event;
@@ -9,28 +9,26 @@ package freevana.util
     import flash.net.URLLoader;
     import flash.utils.Timer;
 
+    import freevana.util.StringHelper;
     //import flash.html.HTMLLoader;
 
     /*
     * @author tirino
     */
-    public class Megaupload extends EventDispatcher
+    public class Megaupload extends EventDispatcher implements IFileHost
     {
-        public static var PAGE_LOADED_EVENT:String = "PageLoadedEvent";
-        public static var COUNTER_CHANGED_EVENT:String = "CounterChangedEvent";
-        public static var LINK_AVAILABLE_EVENT:String = "LinkAvailableEvent";
-        public static var LINK_UNAVAILABLE_EVENT:String = "LinkUnavailableEvent";
-
+        private static const MEGAUPLOAD_SONG_URL:String = 'http://cdn.megaupload.com/file.mp4';
+        
         private var _megaURL:String = null;
 
         private var _urlLoader:URLLoader;
         private var _counterTotal:int = 60;
         private var _timer:Timer = null;
         private var _forcedStop:Boolean = false;
-        public var _privateDownloadURL:String = null;
+        private var _private_downloadURL:String = null;
 
-        public var downloadURL:String = null;
-        public var counterValue:String = null;
+        private var _counterValue:String = null;
+        private var _downloadURL:String = null;
 
         // Old, unused variables
         /*
@@ -43,6 +41,25 @@ package freevana.util
         public function Megaupload(url:String):void 
         {
             _megaURL = url;
+        }
+
+        public function getCounterValue():String
+        {
+            return _counterValue;
+        }
+
+        public function getDownloadURL():String
+        {
+            return _downloadURL;
+        }
+
+        public function getRecaptchaImageURL():String
+        {
+            return "";
+        }
+
+        public function sendRecaptchaText(txt:String):void
+        {
         }
 
         public function start():void
@@ -61,40 +78,44 @@ package freevana.util
                 _timer.stop();
                 trace("[Megaupload] stopped counter!");
             }
+            if (_urlLoader != null) {
+                _urlLoader.removeEventListener(Event.COMPLETE, onPageDownloaded);
+            }
         }
 
         private function onPageDownloaded(ev:Event):void {
-            dispatchEvent(new Event(PAGE_LOADED_EVENT));
+            dispatchEvent(new Event(FileHost.PAGE_LOADED_EVENT));
 
             var html_:String = _urlLoader.data;
             _counterTotal = getCounterInitValue(html_) + 1; // one more second, just in case
-            _privateDownloadURL = getDownloadLink(html_);
+            _private_downloadURL = getDownloadLink(html_);
 
-            if (_privateDownloadURL && _counterTotal && !_forcedStop) {
+            if (_private_downloadURL && _private_downloadURL != MEGAUPLOAD_SONG_URL && 
+                _counterTotal && !_forcedStop) {
                 _timer = new Timer(1000, _counterTotal);
                 _timer.addEventListener(TimerEvent.TIMER, doCount);
                 _timer.addEventListener(TimerEvent.TIMER_COMPLETE, doFinishCount);
                 _timer.start();
             } else {
-                dispatchEvent(new Event(LINK_UNAVAILABLE_EVENT));
+                dispatchEvent(new Event(FileHost.LINK_UNAVAILABLE_EVENT));
                 //Alert.show("Could not get file data on Megaupload!");
             }
         }
 
         private function doCount(ev:Event):void {
-            counterValue = (_counterTotal - ev.target.currentCount) + "";
-            dispatchEvent(new Event(COUNTER_CHANGED_EVENT));
+            _counterValue = (_counterTotal - ev.target.currentCount) + "";
+            dispatchEvent(new Event(FileHost.COUNTER_CHANGED_EVENT));
         }
 
         private function doFinishCount(ev:Event):void {
-            downloadURL = _privateDownloadURL;
-            dispatchEvent(new Event(LINK_AVAILABLE_EVENT));
-            trace("[Megaupload] Video URL: " + downloadURL);
+            _downloadURL = _private_downloadURL;
+            dispatchEvent(new Event(FileHost.LINK_AVAILABLE_EVENT));
+            trace("[Megaupload] Video URL: " + _downloadURL);
         }
 
         private function getDownloadLink(_html:String):String
         {
-            var idPos:int = _html.indexOf('id="downloadlink"');
+            var idPos:int = _html.indexOf('id="dlbuttondisabled"');
             if (idPos > 0) {
                 var hrefPos:int = _html.indexOf('href', idPos); // make sure we're in the <a> link
                 var linkStartPos:int = _html.indexOf('http://', hrefPos); // now look for http://
@@ -105,15 +126,15 @@ package freevana.util
             }
         }
 
-        private function getCounterInitValue(_html:String):int
+        private function getCounterInitValue(html_:String):int
         {
             var scriptTag:String = '<script type="text/javascript">';
-            var countEndPos:int = _html.indexOf('function countdown('); // 'count' is just before this
+            var countEndPos:int = html_.indexOf('function countdown('); // 'count' is just before this
             // now get the <script> tag right before countdown function
-            var scriptPos:int = _html.lastIndexOf(scriptTag, countEndPos);
+            var scriptPos:int = html_.lastIndexOf(scriptTag, countEndPos);
             var countStartPos:int = scriptPos + scriptTag.length;
             // get the content between script and function countdown() and trim it.
-            var counterValue:String = StringHelper.trim(_html.substr(countStartPos, countEndPos-countStartPos));
+            var counterValue:String = StringHelper.trim(html_.substr(countStartPos, countEndPos-countStartPos));
             counterValue = counterValue.replace(/count=/,''); // replace variable name
             counterValue = counterValue.replace(/;/,''); // remove semi-colon
             return parseInt(counterValue);
@@ -139,13 +160,13 @@ package freevana.util
 
         private function _onPageComplete(ev:Event):void
         {
-            dispatchEvent(new Event(PAGE_LOADED_EVENT));
+            dispatchEvent(new Event(FileHost.PAGE_LOADED_EVENT));
 
             trace("[Megaupload] onComplete!");
             var downLink:Object = _htmlLoader.window.document.getElementById("downloadlink");
             if (downLink && downLink.hasChildNodes()) {
                 for(var i:int=0; i < downLink.childNodes.length; i++) {
-                    downloadURL = downLink.childNodes[i].href;
+                    _downloadURL = downLink.childNodes[i].href;
                     break;
                 }
             } else {
@@ -170,12 +191,12 @@ package freevana.util
                 trace("[Megaupload] Finished counter!");
                 timer.stop();
                 _stopOnNext = false;
-                dispatchEvent(new Event(LINK_AVAILABLE_EVENT));
-                trace("[Megaupload] Movie is here: " + downloadURL);
+                dispatchEvent(new Event(FileHost.LINK_AVAILABLE_EVENT));
+                trace("[Megaupload] Movie is here: " + _downloadURL);
             } else {
-                counterValue = _countDown.innerHTML;
-                dispatchEvent(new Event(COUNTER_CHANGED_EVENT));
-                if (counterValue == "1") {
+                _counterValue = _countDown.innerHTML;
+                dispatchEvent(new Event(FileHost.COUNTER_CHANGED_EVENT));
+                if (_counterValue == "1") {
                     trace("[Megaupload] Will stop on next iteration!");
                     _stopOnNext = true;
                 }

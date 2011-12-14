@@ -1,6 +1,6 @@
 <application xmlns="http://ns.adobe.com/air/application/2.6">
     <id>freevana.freevanaPlayer</id>
-    <versionNumber>1.2</versionNumber>
+    <versionNumber>1.2.5</versionNumber>
     <filename>FreevanaPlayer</filename>
     <name>Freevana Player</name>
     <description>Freevana Player</description>
